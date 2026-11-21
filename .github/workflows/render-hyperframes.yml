@@ -1,0 +1,95 @@
+name: Render HyperFrames Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_filename:
+        description: 'Project ZIP filename in repo root'
+        required: false
+        default: 'baba-mithyabadi-hyperframes-9x16-golden.zip'
+      output_filename:
+        description: 'Output MP4 filename'
+        required: true
+        default: 'baba_mithyabadi_hyperframes_9x16.mp4'
+      quality:
+        description: 'Render quality (draft, looks, delivery)'
+        required: true
+        default: 'looks'
+      snapshot_at:
+        description: 'Optional comma-separated timestamps in seconds for PNG preview (e.g. 1,25,66,79,133)'
+        required: false
+        default: ''
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Unzip Project (If ZIP Provided)
+        if: ${{ github.event.inputs.zip_filename != '' }}
+        run: unzip -o "${{ github.event.inputs.zip_filename }}" -x ".github/*"
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install FFmpeg & Headless Chrome Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            fonts-noto-core \
+            fonts-noto-color-emoji \
+            libatk1.0-0 \
+            libcairo2 \
+            libcups2 \
+            libdbus-1-3 \
+            libexpat1 \
+            libfontconfig1 \
+            libgbm1 \
+            libgdk-pixbuf-2.0-0 \
+            libglib2.0-0 \
+            libgtk-3-0 \
+            libnspr4 \
+            libnss3 \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libx11-6 \
+            libx11-xcb1 \
+            libxcb1 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxdamage1 \
+            libxext6 \
+            libxfixes3 \
+            libxi6 \
+            libxrandr2 \
+            libxrender1 \
+            libxss1 \
+            libxtst6 \
+            libasound2t64
+
+      - name: Lint & Validate Composition
+        run: |
+          npx -y hyperframes lint
+          npx -y hyperframes check --json || true
+
+      - name: Render Snapshots or Full MP4
+        run: |
+          mkdir -p out
+          if [ -n "${{ github.event.inputs.snapshot_at }}" ]; then
+            npx -y hyperframes snapshot --at "${{ github.event.inputs.snapshot_at }}"
+            cp -r .hyperframes/artifacts/snapshots/* out/ || true
+          else
+            npx -y hyperframes render --quality "${{ github.event.inputs.quality }}" --output "out/${{ github.event.inputs.output_filename }}"
+          fi
+
+      - name: Upload Rendered Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperframes-render-output
+          path: out/
+          retention-days: 14
